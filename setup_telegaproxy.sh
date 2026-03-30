@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # --- КОНФИГУРАЦИЯ ---
-ALIAS_NAME="TelegramProxy"
-BINARY_PATH="/usr/local/bin/TelegramProxy"
+ALIAS_NAME="telegaproxy"
+BINARY_PATH="/usr/local/bin/telegaproxy"
 TIP_LINK="https://pay.cloudtips.ru/p/4a618628"
 PROMO_LINK="https://t.me/computerchik"
 
@@ -139,7 +139,7 @@ install_deps
 show_promo # Промо теперь только один раз при старте
 
 while true; do
-    echo -e "\n${MAGENTA}=== TelegramProxy Manager (by comp-maniya) ===${NC}"
+    echo -e "\n${MAGENTA}=== telegaproxy Manager (by comp-maniya) ===${NC}"
     echo -e "1) ${GREEN}Установить / Обновить прокси${NC}"
     echo -e "2) Показать данные подключения${NC}"
     echo -e "3) ${YELLOW}Показать PROMO снова${NC}"
