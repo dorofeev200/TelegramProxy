@@ -133,6 +133,46 @@ show_exit() {
     exit 0
 }
 
+# --- ПОЛНОЕ УДАЛЕНИЕ СКРИПТА ---
+full_uninstall() {
+    clear
+    echo -e "${RED}╔══════════════════════════════════════╗${NC}"
+    echo -e "${RED}║     ПОЛНОЕ УДАЛЕНИЕ TELEGAPROXY      ║${NC}"
+    echo -e "${RED}╚══════════════════════════════════════╝${NC}"
+    echo ""
+
+    echo "Будет удалено:"
+    echo "- Docker контейнер mtproto-proxy"
+    echo "- команда $ALIAS_NAME"
+    echo "- launcher $BINARY_PATH"
+    echo ""
+
+    read -p "Удалить полностью? (y/n): " confirm
+    confirm=$(echo "$confirm" | tr '[:upper:]' '[:lower:]')
+
+    if [[ "$confirm" != "y" ]]; then
+        echo -e "${YELLOW}Удаление отменено.${NC}"
+        read -p "Нажмите Enter..."
+        return
+    fi
+
+    echo -e "${YELLOW}[*] Остановка контейнера...${NC}"
+    docker stop mtproto-proxy >/dev/null 2>&1
+    docker rm mtproto-proxy >/dev/null 2>&1
+
+    echo -e "${YELLOW}[*] Удаление Docker image...${NC}"
+    docker rmi nineseconds/mtg:2 >/dev/null 2>&1
+
+    echo -e "${YELLOW}[*] Удаление launcher...${NC}"
+    rm -f "$BINARY_PATH"
+
+    echo ""
+    echo -e "${GREEN}[SUCCESS] Скрипт полностью удалён.${NC}"
+    echo -e "${GREEN}[SUCCESS] Перезапустите терминал.${NC}"
+
+    exit 0
+}
+
 # --- СТАРТ СКРИПТА ---
 check_root
 install_deps
@@ -143,7 +183,8 @@ while true; do
     echo -e "1) ${GREEN}Установить / Обновить прокси${NC}"
     echo -e "2) Показать данные подключения${NC}"
     echo -e "3) ${YELLOW}Показать PROMO снова${NC}"
-    echo -e "4) ${RED}Удалить прокси${NC}"
+    echo -e "4) ${RED}Удалить только прокси${NC}"
+    echo -e "5) ${RED}Удалить скрипт полностью${NC}"
     echo -e "0) Выход${NC}"
     read -p "Пункт: " m_idx
     case $m_idx in
@@ -151,6 +192,7 @@ while true; do
         2) clear; show_config; read -p "Нажмите Enter..." ;;
         3) show_promo ;;
         4) docker stop mtproto-proxy && docker rm mtproto-proxy && echo "Удалено" ;;
+        5) full_uninstall ;;
         0) show_exit ;;
         *) echo "Неверный ввод" ;;
     esac
