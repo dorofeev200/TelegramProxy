@@ -16,115 +16,87 @@ BLUE='\033[0;34m'
 WHITE='\033[1;37m'
 NC='\033[0m'
 
-# --- СИСТЕМНЫЕ ПРОВЕРКИ ---
 check_root() {
-    if [ "$EUID" -ne 0 ]; then echo -e "${RED}Ошибка: запустите через sudo!${NC}"; exit 1; fi
+    if [ "$EUID" -ne 0 ]; then
+        echo -e "${RED}Ошибка: запустите через sudo!${NC}"
+        exit 1
+    fi
 }
 
 install_deps() {
-    if ! command -v docker &> /dev/null; then
+    if ! command -v docker >/dev/null 2>&1; then
         curl -fsSL https://get.docker.com | sh
         systemctl enable --now docker
     fi
-    if ! command -v qrencode &> /dev/null; then
-        apt-get update && apt-get install -y qrencode || yum install -y qrencode
+
+    if ! command -v qrencode >/dev/null 2>&1; then
+        apt-get update && apt-get install -y qrencode
     fi
-    cp "$0" "$BINARY_PATH" && chmod +x "$BINARY_PATH"
+
+    cp "$0" "$BINARY_PATH"
+    chmod +x "$BINARY_PATH"
 }
 
 get_ip() {
-    local ip
-    ip=$(curl -s -4 --max-time 5 https://api.ipify.org || curl -s -4 --max-time 5 https://icanhazip.com || echo "0.0.0.0")
-    echo "$ip" | grep -E -o '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n 1
+    curl -s -4 https://api.ipify.org
 }
 
-# --- 1) ПРОМО ПРИ ЗАПУСКЕ ---
 show_promo() {
     clear
+    echo -e "${MAGENTA}╔════════════════════════════════════════════╗${NC}"
+    echo -e "${MAGENTA}║         COMP_MANIYA Telega Proxy           ║${NC}"
+    echo -e "${MAGENTA}╚════════════════════════════════════════════╝${NC}"
     echo ""
-    echo -e "${MAGENTA}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${MAGENTA}║                 COMP_MANIYA Telega Proxy                     ║${NC}"
-    echo -e "${MAGENTA}╚══════════════════════════════════════════════════════════════╝${NC}"
+    echo -e "${CYAN}Telegram:${NC} $PROMO_LINK"
     echo ""
-
-    echo -e "${CYAN}Telegram:${NC} https://t.me/computerchik"
-    echo -e "${RED}YouTube:${NC} https://www.youtube.com/@comp_maniya"
-
-    echo ""
-    echo -e "${YELLOW}QR Telegram:${NC}"
-    qrencode -t ANSIUTF8 "https://t.me/computerchik"
-
-    echo ""
-    echo -e "${YELLOW}QR YouTube:${NC}"
-    qrencode -t ANSIUTF8 "https://www.youtube.com/@comp_maniya"
-
-    echo ""
-    read -p "Нажмите enter для настройки каскадного скрипта..."
+    qrencode -t ANSIUTF8 "$PROMO_LINK"
+    read -p "Нажмите Enter..."
 }
 
-# --- ПАНЕЛЬ ДАННЫХ ---
-show_config() {
-    if ! docker ps | grep -q "mtproto-proxy"; then echo -e "${RED}Прокси не найден!${NC}"; return; fi
-    SECRET=$(docker inspect mtproto-proxy --format='{{range .Config.Cmd}}{{.}} {{end}}' | awk '{print $NF}')
-    IP=$(get_ip)
-    PORT=$(docker inspect mtproto-proxy --format='{{range $p, $conf := .HostConfig.PortBindings}}{{(index $conf 0).HostPort}}{{end}}' 2>/dev/null)
-    PORT=${PORT:-443}
-    LINK="tg://proxy?server=$IP&port=$PORT&secret=$SECRET"
-
-    echo -e "\n${GREEN}=== ПАНЕЛЬ ДАННЫХ (RU) ===${NC}"
-    echo -e "IP: $IP | Port: $PORT"
-    echo -e "Secret: $SECRET"
-    echo -e "Link: ${BLUE}$LINK${NC}"
-    qrencode -t ANSIUTF8 "$LINK"
+list_users() {
+    clear
+    echo -e "${CYAN}--- Список пользователей ---${NC}"
+    docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep mtproto-proxy
+    read -p "Нажмите Enter..."
 }
 
-# --- УСТАНОВКА (MULTI USER) ---
+select_user() {
+    list_users
+    read -p "Введите порт пользователя: " PORT
+    CONTAINER_NAME="mtproto-proxy-$PORT"
+
+    if ! docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+        echo -e "${RED}Пользователь не найден!${NC}"
+        read -p "Нажмите Enter..."
+        return 1
+    fi
+    return 0
+}
+
 menu_install() {
     clear
-    echo -e "${CYAN}--- Выберите домен для маскировки (Fake TLS) ---${NC}"
+    echo -e "${CYAN}--- Выберите домен для маскировки ---${NC}"
 
-    domains=(
-        "google.com" "wikipedia.org" "habr.com" "github.com"
-        "coursera.org" "udemy.com" "medium.com" "stackoverflow.com"
-        "bbc.com" "cnn.com" "reuters.com" "nytimes.com"
-        "lenta.ru" "rbc.ru" "ria.ru" "kommersant.ru"
-        "stepik.org" "duolingo.com" "khanacademy.org" "ted.com"
-    )
+    domains=("google.com" "github.com" "bbc.com" "stackoverflow.com")
 
     for i in "${!domains[@]}"; do
-        printf "${YELLOW}%2d)${NC} %-20s " "$((i+1))" "${domains[$i]}"
-        [[ $(( (i+1) % 2 )) -eq 0 ]] && echo ""
+        printf "${YELLOW}%2d)${NC} %-20s\n" "$((i+1))" "${domains[$i]}"
     done
 
-    echo ""
-    read -p "Ваш выбор [1-20]: " d_idx
+    read -p "Ваш выбор [1-4]: " d_idx
     DOMAIN=${domains[$((d_idx-1))]}
     DOMAIN=${DOMAIN:-google.com}
 
     echo ""
-    echo -e "${CYAN}--- Выберите порт ---${NC}"
-    echo -e "1) 443"
-    echo -e "2) 8443"
-    echo -e "3) Свой порт"
-
-    read -p "Выбор: " p_choice
-
-    case $p_choice in
-        2) PORT=8443 ;;
-        3) read -p "Введите свой порт: " PORT ;;
-        *) PORT=443 ;;
-    esac
+    read -p "Введите порт: " PORT
 
     CONTAINER_NAME="mtproto-proxy-$PORT"
 
     if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-        echo -e "${RED}[ERROR] Пользователь на порту ${PORT} уже существует!${NC}"
+        echo -e "${RED}Порт уже используется!${NC}"
         read -p "Нажмите Enter..."
         return
     fi
-
-    echo ""
-    echo -e "${YELLOW}[*] Создание пользователя на порту ${PORT}...${NC}"
 
     SECRET=$(docker run --rm nineseconds/mtg:2 generate-secret --hex "$DOMAIN")
 
@@ -136,50 +108,55 @@ menu_install() {
         -n 1.1.1.1 \
         -i prefer-ipv4 \
         0.0.0.0:"$PORT" \
-        "$SECRET" > /dev/null
+        "$SECRET" >/dev/null
 
     IP=$(get_ip)
     LINK="tg://proxy?server=$IP&port=$PORT&secret=$SECRET"
 
     clear
-    echo -e "${GREEN}[SUCCESS] Пользователь создан.${NC}"
-    echo ""
-    echo -e "Контейнер: ${CYAN}${CONTAINER_NAME}${NC}"
-    echo -e "Порт: ${CYAN}${PORT}${NC}"
-    echo -e "Secret: ${CYAN}${SECRET}${NC}"
-    echo -e "Link: ${BLUE}${LINK}${NC}"
-    echo ""
-
+    echo -e "${GREEN}[SUCCESS] Пользователь создан${NC}"
+    echo "Порт: $PORT"
+    echo "Link: $LINK"
     qrencode -t ANSIUTF8 "$LINK"
 
     read -p "Нажмите Enter..."
 }
 
-# --- ВЫХОД ---
-show_exit() {
+show_online_users() {
+    select_user || return
+
+    PORT=$(docker inspect "$CONTAINER_NAME" \
+        --format='{{range $p, $conf := .HostConfig.PortBindings}}{{(index $conf 0).HostPort}}{{end}}')
+
     clear
-    show_config
-    echo -e "\n${MAGENTA}💰 ПОДДЕРЖКА АВТОРА (CloudTips)${NC}"
-    qrencode -t ANSIUTF8 "$TIP_LINK"
-    echo -e "Донат: $TIP_LINK"
-    echo -e "https://www.youtube.com/@comp_maniya"
-    exit 0
+    ss -tn state established "( dport = :$PORT or sport = :$PORT )"
+
+    read -p "Нажмите Enter..."
 }
 
-# --- УДАЛЕНИЕ ВСЕХ ПРОКСИ И СКРИПТА ---
+restart_proxy() {
+    select_user || return
+    docker restart "$CONTAINER_NAME" >/dev/null
+    echo -e "${GREEN}[OK] Перезапущен${NC}"
+    read -p "Нажмите Enter..."
+}
+
+proxy_monitoring() {
+    select_user || return
+    docker stats "$CONTAINER_NAME" --no-stream
+    read -p "Нажмите Enter..."
+}
+
+remove_proxy() {
+    select_user || return
+    docker stop "$CONTAINER_NAME" >/dev/null
+    docker rm "$CONTAINER_NAME" >/dev/null
+    echo -e "${GREEN}[OK] Удалён${NC}"
+    read -p "Нажмите Enter..."
+}
+
 full_uninstall() {
-    clear
-    echo -e "${RED}╔══════════════════════════════════════╗${NC}"
-    echo -e "${RED}║       FULL PRO UNINSTALL             ║${NC}"
-    echo -e "${RED}╚══════════════════════════════════════╝${NC}"
-    echo ""
-
-    read -p "Удалить ВСЕХ пользователей и скрипт? (y/n): " confirm
-    confirm=$(echo "$confirm" | tr '[:upper:]' '[:lower:]')
-
-    [[ "$confirm" != "y" ]] && return
-
-    docker ps -a --format '{{.Names}}' | grep '^mtproto-proxy-' | while read c; do
+    docker ps -a --format '{{.Names}}' | grep '^mtproto-proxy' | while read c; do
         docker stop "$c" >/dev/null 2>&1
         docker rm "$c" >/dev/null 2>&1
     done
@@ -187,133 +164,37 @@ full_uninstall() {
     docker rmi nineseconds/mtg:2 >/dev/null 2>&1
     rm -f "$BINARY_PATH"
 
-    echo -e "${GREEN}[SUCCESS] Всё удалено.${NC}"
+    echo -e "${GREEN}[SUCCESS] Всё удалено${NC}"
     exit 0
 }
 
-# --- ВЫБОР ПОЛЬЗОВАТЕЛЯ ПО ПОРТУ ---
-select_proxy() {
-    read -p "Введите порт пользователя: " PORT
-    CONTAINER_NAME="mtproto-proxy-$PORT"
+check_root
+install_deps
+show_promo
 
-    if ! docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-        echo -e "${RED}Пользователь не найден.${NC}"
-        return 1
-    fi
-
-    return 0
-}
-
-# --- RESTART ---
-restart_proxy() {
-    clear
-    echo -e "${CYAN}--- Restart пользователя ---${NC}"
-
-    select_proxy || { read -p "Enter..."; return; }
-
-    docker restart "$CONTAINER_NAME" >/dev/null 2>&1
-
-    echo -e "${GREEN}[OK] Перезапущен ${CONTAINER_NAME}${NC}"
-    read -p "Нажмите Enter..."
-}
-
-# --- ONLINE USERS ---
-show_online_users() {
-    clear
-    echo -e "${CYAN}--- ONLINE USERS ---${NC}"
-
-    select_proxy || { read -p "Enter..."; return; }
-
-    PORT=$(docker inspect "$CONTAINER_NAME" \
-        --format='{{range $p, $conf := .HostConfig.PortBindings}}{{(index $conf 0).HostPort}}{{end}}')
-
-    ss -tn state established "( dport = :$PORT or sport = :$PORT )"
-
-    echo ""
-    echo -e "${GREEN}Всего:${NC} $(ss -tn state established "( dport = :$PORT or sport = :$PORT )" | tail -n +2 | wc -l)"
-
-    read -p "Нажмите Enter..."
-}
-
-# --- STATS ---
-proxy_monitoring() {
-    clear
-    echo -e "${CYAN}--- MONITORING ---${NC}"
-
-    select_proxy || { read -p "Enter..."; return; }
-
-    docker stats "$CONTAINER_NAME" --no-stream
-
-    read -p "Нажмите Enter..."
-}
-
-# --- TOP CLIENTS ---
-top_clients() {
-    clear
-    echo -e "${CYAN}--- TOP CLIENTS ---${NC}"
-
-    select_proxy || { read -p "Enter..."; return; }
-
-    PORT=$(docker inspect "$CONTAINER_NAME" \
-        --format='{{range $p, $conf := .HostConfig.PortBindings}}{{(index $conf 0).HostPort}}{{end}}')
-
-    ss -tn state established "( dport = :$PORT or sport = :$PORT )" \
-        | awk 'NR>1 {print $5}' \
-        | cut -d: -f1 \
-        | sort | uniq -c | sort -nr
-
-    read -p "Нажмите Enter..."
-}
-
-# --- REMOVE USER ---
-remove_proxy_by_port() {
-    clear
-    echo -e "${CYAN}--- REMOVE USER ---${NC}"
-
-    select_proxy || { read -p "Enter..."; return; }
-
-    docker stop "$CONTAINER_NAME" >/dev/null 2>&1
-    docker rm "$CONTAINER_NAME" >/dev/null 2>&1
-
-    echo -e "${GREEN}[OK] Удалён ${CONTAINER_NAME}${NC}"
-    read -p "Нажмите Enter..."
-}
-
-# --- LIST USERS ---
-list_all_users() {
-    clear
-    docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep mtproto-proxy
-    read -p "Нажмите Enter..."
-}
-
-# --- MAIN LOOP ---
 while true; do
     clear
-    echo -e "${MAGENTA}=== TELEGAPROXY PRO MANAGER ===${NC}"
-    echo "1) Добавить пользователя"
-    echo "2) Показать всех пользователей"
-    echo "3) Restart пользователя"
-    echo "4) Online users"
-    echo "5) Monitoring"
-    echo "6) Top clients"
-    echo "7) Удалить пользователя"
-    echo "8) Заблокировать IP"
-    echo "9) Full uninstall"
-    echo "0) Exit"
+    echo -e "${MAGENTA}=== telegaproxy Manager (by comp-maniya) ===${NC}"
+    echo -e "1) ${GREEN}Добавить пользователя${NC}"
+    echo -e "2) Показать пользователей"
+    echo -e "3) Restart пользователя"
+    echo -e "4) Online users"
+    echo -e "5) Monitoring"
+    echo -e "6) ${RED}Удалить пользователя${NC}"
+    echo -e "7) ${RED}Удалить всё${NC}"
+    echo -e "0) Выход"
 
     read -p "Пункт: " m_idx
 
     case $m_idx in
         1) menu_install ;;
-        2) list_all_users ;;
+        2) list_users ;;
         3) restart_proxy ;;
         4) show_online_users ;;
         5) proxy_monitoring ;;
-        6) top_clients ;;
-        7) remove_proxy_by_port ;;
-        8) block_client_ip ;;
-        9) full_uninstall ;;
-        0) show_exit ;;
-        *) echo "Ошибка"; sleep 1 ;;
+        6) remove_proxy ;;
+        7) full_uninstall ;;
+        0) exit 0 ;;
+        *) echo "Неверный ввод"; sleep 1 ;;
     esac
 done
