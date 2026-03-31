@@ -20,9 +20,4 @@
 ```bash
 wget -O setup_telegaproxy.sh https://raw.githubusercontent.com/dorofeev200/TelegramProxy/main/setup_telegaproxy.sh && chmod +x setup_telegaproxy.sh && sudo ./setup_telegaproxy.sh
 
-## 📥 Быстрое удаление (One-Liner)
 
-Просто скопируйте эту команду и вставьте в терминал вашего сервера (работает на Ubuntu/Debian/CentOS):
-
-```bash
-sudo docker rm -f mtproto-proxy 2>/dev/null; sudo rm -f /usr/local/bin/telegaproxy ~/setup_telegaproxy.sh
