@@ -78,48 +78,81 @@ show_config() {
     qrencode -t ANSIUTF8 "$LINK"
 }
 
-# --- УСТАНОВКА ---
+# --- УСТАНОВКА (MULTI USER) ---
 menu_install() {
     clear
     echo -e "${CYAN}--- Выберите домен для маскировки (Fake TLS) ---${NC}"
+
     domains=(
-        "google.com" "wikipedia.org" "habr.com" "github.com" 
+        "google.com" "wikipedia.org" "habr.com" "github.com"
         "coursera.org" "udemy.com" "medium.com" "stackoverflow.com"
         "bbc.com" "cnn.com" "reuters.com" "nytimes.com"
         "lenta.ru" "rbc.ru" "ria.ru" "kommersant.ru"
         "stepik.org" "duolingo.com" "khanacademy.org" "ted.com"
     )
-    
+
     for i in "${!domains[@]}"; do
         printf "${YELLOW}%2d)${NC} %-20s " "$((i+1))" "${domains[$i]}"
         [[ $(( (i+1) % 2 )) -eq 0 ]] && echo ""
     done
-    
+
+    echo ""
     read -p "Ваш выбор [1-20]: " d_idx
     DOMAIN=${domains[$((d_idx-1))]}
     DOMAIN=${DOMAIN:-google.com}
 
-    echo -e "\n${CYAN}--- Выберите порт ---${NC}"
-    echo -e "1) 443 (Рекомендуется)"
+    echo ""
+    echo -e "${CYAN}--- Выберите порт ---${NC}"
+    echo -e "1) 443"
     echo -e "2) 8443"
     echo -e "3) Свой порт"
+
     read -p "Выбор: " p_choice
+
     case $p_choice in
         2) PORT=8443 ;;
         3) read -p "Введите свой порт: " PORT ;;
         *) PORT=443 ;;
     esac
 
-    echo -e "${YELLOW}[*] Настройка прокси...${NC}"
+    CONTAINER_NAME="mtproto-proxy-$PORT"
+
+    if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+        echo -e "${RED}[ERROR] Пользователь на порту ${PORT} уже существует!${NC}"
+        read -p "Нажмите Enter..."
+        return
+    fi
+
+    echo ""
+    echo -e "${YELLOW}[*] Создание пользователя на порту ${PORT}...${NC}"
+
     SECRET=$(docker run --rm nineseconds/mtg:2 generate-secret --hex "$DOMAIN")
-    docker stop mtproto-proxy &>/dev/null && docker rm mtproto-proxy &>/dev/null
-    
-    docker run -d --name mtproto-proxy --restart always -p "$PORT":"$PORT" \
-        nineseconds/mtg:2 simple-run -n 1.1.1.1 -i prefer-ipv4 0.0.0.0:"$PORT" "$SECRET" > /dev/null
-    
+
+    docker run -d \
+        --name "$CONTAINER_NAME" \
+        --restart always \
+        -p "$PORT":"$PORT" \
+        nineseconds/mtg:2 simple-run \
+        -n 1.1.1.1 \
+        -i prefer-ipv4 \
+        0.0.0.0:"$PORT" \
+        "$SECRET" > /dev/null
+
+    IP=$(get_ip)
+    LINK="tg://proxy?server=$IP&port=$PORT&secret=$SECRET"
+
     clear
-    show_config
-    read -p "Установка завершена. Нажмите Enter..."
+    echo -e "${GREEN}[SUCCESS] Пользователь создан.${NC}"
+    echo ""
+    echo -e "Контейнер: ${CYAN}${CONTAINER_NAME}${NC}"
+    echo -e "Порт: ${CYAN}${PORT}${NC}"
+    echo -e "Secret: ${CYAN}${SECRET}${NC}"
+    echo -e "Link: ${BLUE}${LINK}${NC}"
+    echo ""
+
+    qrencode -t ANSIUTF8 "$LINK"
+
+    read -p "Нажмите Enter..."
 }
 
 # --- ВЫХОД ---
