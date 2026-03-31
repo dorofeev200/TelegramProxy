@@ -64,7 +64,7 @@ show_promo() {
     qrencode -t ANSIUTF8 "https://www.youtube.com/@comp_maniya"
 
     echo ""
-    read -p "Нажмите enter для настройки каскадного скрипта..."
+    read -p "Нажмите enter для настройки Proxy скрипта..."
 }
 
 # --- СПИСОК ВСЕХ ПРОКСИ ---
