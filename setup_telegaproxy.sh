@@ -215,6 +215,49 @@ full_uninstall() {
     exit 0
 }
 
+# --- СТАТУС ПРОКСИ ---
+show_status() {
+    clear
+    echo -e "${CYAN}--- СТАТУС ПРОКСИ ---${NC}"
+    docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.RunningFor}}" | grep mtproto-proxy
+    read -p "Нажмите Enter..."
+}
+
+# --- ТРАФИК ---
+show_traffic() {
+    clear
+    echo -e "${CYAN}--- ТРАФИК КЛИЕНТОВ ---${NC}"
+    docker stats --no-stream --format "table {{.Name}}\t{{.NetIO}}" | grep mtproto-proxy
+    read -p "Нажмите Enter..."
+}
+
+# --- БЛОКИРОВКА ---
+block_proxy() {
+    clear
+    read -p "Введите ID клиента для блокировки: " CLIENT_ID
+    docker stop "mtproto-proxy-$CLIENT_ID"
+    echo -e "${RED}Клиент заблокирован${NC}"
+    read -p "Нажмите Enter..."
+}
+
+# --- РАЗБЛОКИРОВКА ---
+unblock_proxy() {
+    clear
+    read -p "Введите ID клиента: " CLIENT_ID
+    docker start "mtproto-proxy-$CLIENT_ID"
+    echo -e "${GREEN}Клиент разблокирован${NC}"
+    read -p "Нажмите Enter..."
+}
+
+# --- ПЕРЕЗАПУСК ---
+restart_proxy() {
+    clear
+    read -p "Введите ID клиента: " CLIENT_ID
+    docker restart "mtproto-proxy-$CLIENT_ID"
+    echo -e "${GREEN}Прокси перезапущен${NC}"
+    read -p "Нажмите Enter..."
+}
+
 # --- СТАРТ ---
 check_root
 install_deps
@@ -227,6 +270,11 @@ while true; do
     echo -e "3) ${YELLOW}Показать PROMO снова${NC}"
     echo -e "4) ${RED}Удалить прокси по номеру${NC}"
     echo -e "5) ${RED}Удалить скрипт полностью${NC}"
+    echo -e "6) ${CYAN}Статус клиентов${NC}"
+    echo -e "7) ${CYAN}Трафик клиентов${NC}"
+    echo -e "8) ${RED}Заблокировать клиента${NC}"
+    echo -e "9) ${GREEN}Разблокировать клиента${NC}"
+    echo -e "10) ${YELLOW}Перезапустить клиента${NC}"
     echo -e "0) Выход${NC}"
 
     read -p "Пункт: " m_idx
@@ -237,6 +285,11 @@ while true; do
         3) show_promo ;;
         4) delete_proxy ;;
         5) full_uninstall ;;
+        6) show_status ;;
+        7) show_traffic ;;
+        8) block_proxy ;;
+        9) unblock_proxy ;;
+        10) restart_proxy ;;
         0) exit 0 ;;
         *) echo "Неверный ввод" ;;
     esac
