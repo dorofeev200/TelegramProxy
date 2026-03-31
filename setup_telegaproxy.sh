@@ -166,188 +166,154 @@ show_exit() {
     exit 0
 }
 
-# --- ПОЛНОЕ УДАЛЕНИЕ СКРИПТА ---
+# --- УДАЛЕНИЕ ВСЕХ ПРОКСИ И СКРИПТА ---
 full_uninstall() {
     clear
     echo -e "${RED}╔══════════════════════════════════════╗${NC}"
-    echo -e "${RED}║     ПОЛНОЕ УДАЛЕНИЕ TELEGAPROXY      ║${NC}"
+    echo -e "${RED}║       FULL PRO UNINSTALL             ║${NC}"
     echo -e "${RED}╚══════════════════════════════════════╝${NC}"
     echo ""
 
-    echo "Будет удалено:"
-    echo "- Docker контейнер mtproto-proxy"
-    echo "- команда $ALIAS_NAME"
-    echo "- launcher $BINARY_PATH"
-    echo ""
-
-    read -p "Удалить полностью? (y/n): " confirm
+    read -p "Удалить ВСЕХ пользователей и скрипт? (y/n): " confirm
     confirm=$(echo "$confirm" | tr '[:upper:]' '[:lower:]')
 
-    if [[ "$confirm" != "y" ]]; then
-        echo -e "${YELLOW}Удаление отменено.${NC}"
-        read -p "Нажмите Enter..."
-        return
-    fi
+    [[ "$confirm" != "y" ]] && return
 
-    echo -e "${YELLOW}[*] Остановка контейнера...${NC}"
-    docker stop mtproto-proxy >/dev/null 2>&1
-    docker rm mtproto-proxy >/dev/null 2>&1
+    docker ps -a --format '{{.Names}}' | grep '^mtproto-proxy-' | while read c; do
+        docker stop "$c" >/dev/null 2>&1
+        docker rm "$c" >/dev/null 2>&1
+    done
 
-    echo -e "${YELLOW}[*] Удаление Docker image...${NC}"
     docker rmi nineseconds/mtg:2 >/dev/null 2>&1
-
-    echo -e "${YELLOW}[*] Удаление launcher...${NC}"
     rm -f "$BINARY_PATH"
 
-    echo ""
-    echo -e "${GREEN}[SUCCESS] Скрипт полностью удалён.${NC}"
-    echo -e "${GREEN}[SUCCESS] Перезапустите терминал.${NC}"
-
+    echo -e "${GREEN}[SUCCESS] Всё удалено.${NC}"
     exit 0
 }
 
-# --- 6) ПЕРЕЗАПУСК ПРОКСИ ---
-restart_proxy() {
-    clear
-    echo -e "${CYAN}--- Перезапуск прокси ---${NC}"
+# --- ВЫБОР ПОЛЬЗОВАТЕЛЯ ПО ПОРТУ ---
+select_proxy() {
+    read -p "Введите порт пользователя: " PORT
+    CONTAINER_NAME="mtproto-proxy-$PORT"
 
-    if ! docker ps -a | grep -q "mtproto-proxy"; then
-        echo -e "${RED}Прокси контейнер не найден!${NC}"
-        read -p "Нажмите Enter..."
-        return
+    if ! docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+        echo -e "${RED}Пользователь не найден.${NC}"
+        return 1
     fi
 
-    docker restart mtproto-proxy >/dev/null 2>&1
+    return 0
+}
 
-    echo -e "${GREEN}[OK] Прокси успешно перезапущен.${NC}"
+# --- RESTART ---
+restart_proxy() {
+    clear
+    echo -e "${CYAN}--- Restart пользователя ---${NC}"
+
+    select_proxy || { read -p "Enter..."; return; }
+
+    docker restart "$CONTAINER_NAME" >/dev/null 2>&1
+
+    echo -e "${GREEN}[OK] Перезапущен ${CONTAINER_NAME}${NC}"
     read -p "Нажмите Enter..."
 }
 
-# --- 7) ONLINE ПОЛЬЗОВАТЕЛИ ---
+# --- ONLINE USERS ---
 show_online_users() {
     clear
-    echo -e "${CYAN}╔══════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║        ONLINE ПОЛЬЗОВАТЕЛИ           ║${NC}"
-    echo -e "${CYAN}╚══════════════════════════════════════╝${NC}"
-    echo ""
+    echo -e "${CYAN}--- ONLINE USERS ---${NC}"
 
-    if ! docker ps | grep -q "mtproto-proxy"; then
-        echo -e "${RED}Прокси не запущен.${NC}"
-        read -p "Нажмите Enter..."
-        return
-    fi
+    select_proxy || { read -p "Enter..."; return; }
 
-    PORT=$(docker inspect mtproto-proxy \
-        --format='{{range $p, $conf := .HostConfig.PortBindings}}{{(index $conf 0).HostPort}}{{end}}' 2>/dev/null)
-
-    PORT=${PORT:-443}
-
-    echo -e "${YELLOW}Порт:${NC} $PORT"
-    echo ""
+    PORT=$(docker inspect "$CONTAINER_NAME" \
+        --format='{{range $p, $conf := .HostConfig.PortBindings}}{{(index $conf 0).HostPort}}{{end}}')
 
     ss -tn state established "( dport = :$PORT or sport = :$PORT )"
 
     echo ""
-    echo -e "${GREEN}Всего подключений:${NC} $(ss -tn state established "( dport = :$PORT or sport = :$PORT )" | tail -n +2 | wc -l)"
-    echo ""
+    echo -e "${GREEN}Всего:${NC} $(ss -tn state established "( dport = :$PORT or sport = :$PORT )" | tail -n +2 | wc -l)"
 
     read -p "Нажмите Enter..."
 }
 
-# --- 8) МОНИТОРИНГ ТРАФИКА ---
+# --- STATS ---
 proxy_monitoring() {
     clear
-    echo -e "${CYAN}--- Мониторинг нагрузки прокси ---${NC}"
+    echo -e "${CYAN}--- MONITORING ---${NC}"
 
-    docker stats mtproto-proxy --no-stream
+    select_proxy || { read -p "Enter..."; return; }
 
-    echo ""
+    docker stats "$CONTAINER_NAME" --no-stream
+
     read -p "Нажмите Enter..."
 }
 
-# --- 9) ОБНОВЛЕНИЕ DOCKER IMAGE ---
-update_proxy_image() {
-    clear
-    echo -e "${CYAN}--- Обновление MTProto Proxy ---${NC}"
-
-    docker pull nineseconds/mtg:2
-
-    echo ""
-    echo -e "${GREEN}[OK] Docker image обновлён.${NC}"
-    read -p "Нажмите Enter..."
-}
-
-# --- ТОП КЛИЕНТОВ ПО ТРАФИКУ ---
+# --- TOP CLIENTS ---
 top_clients() {
     clear
-    echo -e "${CYAN}╔══════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║        ТОП КЛИЕНТОВ ПО IP            ║${NC}"
-    echo -e "${CYAN}╚══════════════════════════════════════╝${NC}"
-    echo ""
+    echo -e "${CYAN}--- TOP CLIENTS ---${NC}"
 
-    PORT=$(docker inspect mtproto-proxy \
-        --format='{{range $p, $conf := .HostConfig.PortBindings}}{{(index $conf 0).HostPort}}{{end}}' 2>/dev/null)
+    select_proxy || { read -p "Enter..."; return; }
 
-    PORT=${PORT:-443}
+    PORT=$(docker inspect "$CONTAINER_NAME" \
+        --format='{{range $p, $conf := .HostConfig.PortBindings}}{{(index $conf 0).HostPort}}{{end}}')
 
     ss -tn state established "( dport = :$PORT or sport = :$PORT )" \
         | awk 'NR>1 {print $5}' \
         | cut -d: -f1 \
-        | sort \
-        | uniq -c \
-        | sort -nr
+        | sort | uniq -c | sort -nr
 
-    echo ""
     read -p "Нажмите Enter..."
 }
 
-# --- БЛОКИРОВКА IP ---
-block_client_ip() {
+# --- REMOVE USER ---
+remove_proxy_by_port() {
     clear
-    echo -e "${CYAN}--- Блокировка IP клиента ---${NC}"
+    echo -e "${CYAN}--- REMOVE USER ---${NC}"
 
-    read -p "Введите IP для блокировки: " CLIENT_IP
+    select_proxy || { read -p "Enter..."; return; }
 
-    iptables -I INPUT -s "$CLIENT_IP" -j DROP
+    docker stop "$CONTAINER_NAME" >/dev/null 2>&1
+    docker rm "$CONTAINER_NAME" >/dev/null 2>&1
 
-    echo -e "${GREEN}[OK] IP ${CLIENT_IP} заблокирован.${NC}"
-
+    echo -e "${GREEN}[OK] Удалён ${CONTAINER_NAME}${NC}"
     read -p "Нажмите Enter..."
 }
 
-# --- СТАРТ СКРИПТА ---
-check_root
-install_deps
-show_promo # Промо теперь только один раз при старте
+# --- LIST USERS ---
+list_all_users() {
+    clear
+    docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep mtproto-proxy
+    read -p "Нажмите Enter..."
+}
 
+# --- MAIN LOOP ---
 while true; do
-    echo -e "\n${MAGENTA}=== telegaproxy Manager (by comp-maniya) ===${NC}"
-    echo -e "1) ${GREEN}Установить / Обновить прокси${NC}"
-    echo -e "2) Показать данные подключения${NC}"
-    echo -e "3) ${YELLOW}Показать PROMO снова${NC}"
-    echo -e "4) ${RED}Удалить только прокси${NC}"
-    echo -e "5) ${RED}Удалить скрипт полностью${NC}"
-    echo -e "6) ${CYAN}Перезапустить прокси${NC}"
-    echo -e "7) ${CYAN}ONLINE пользователи${NC}"
-    echo -e "8) ${CYAN}Мониторинг нагрузки${NC}"
-    echo -e "9) ${CYAN}Обновить Docker image${NC}"
-    echo -e "10) Топ клиентов по IP"
-    echo -e "11) Заблокировать IP"
-    echo -e "0) Выход${NC}"
+    clear
+    echo -e "${MAGENTA}=== TELEGAPROXY PRO MANAGER ===${NC}"
+    echo "1) Добавить пользователя"
+    echo "2) Показать всех пользователей"
+    echo "3) Restart пользователя"
+    echo "4) Online users"
+    echo "5) Monitoring"
+    echo "6) Top clients"
+    echo "7) Удалить пользователя"
+    echo "8) Заблокировать IP"
+    echo "9) Full uninstall"
+    echo "0) Exit"
+
     read -p "Пункт: " m_idx
+
     case $m_idx in
         1) menu_install ;;
-        2) clear; show_config; read -p "Нажмите Enter..." ;;
-        3) show_promo ;;
-        4) docker stop mtproto-proxy >/dev/null 2>&1; docker rm mtproto-proxy >/dev/null 2>&1; echo "Прокси удалён" ;;
-        5) full_uninstall ;;
-        6) restart_proxy ;;
-        7) show_online_users ;;
-        8) proxy_monitoring ;;
-        9) update_proxy_image ;;
-        10) top_clients ;;
-        11) block_client_ip ;;
+        2) list_all_users ;;
+        3) restart_proxy ;;
+        4) show_online_users ;;
+        5) proxy_monitoring ;;
+        6) top_clients ;;
+        7) remove_proxy_by_port ;;
+        8) block_client_ip ;;
+        9) full_uninstall ;;
         0) show_exit ;;
-        *) echo "Неверный ввод" ;;
+        *) echo "Ошибка"; sleep 1 ;;
     esac
 done
