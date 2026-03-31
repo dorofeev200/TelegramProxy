@@ -191,7 +191,7 @@ while true; do
         1) menu_install ;;
         2) clear; show_config; read -p "Нажмите Enter..." ;;
         3) show_promo ;;
-        4) docker stop mtproto-proxy && docker rm mtproto-proxy && echo "Удалено" ;;
+        4) docker stop mtproto-proxy >/dev/null 2>&1; docker rm mtproto-proxy >/dev/null 2>&1; echo "Прокси удалён" ;;
         5) full_uninstall ;;
         0) show_exit ;;
         *) echo "Неверный ввод" ;;
