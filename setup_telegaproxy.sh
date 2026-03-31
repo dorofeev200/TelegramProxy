@@ -64,30 +64,48 @@ show_promo() {
 
 # --- ПАНЕЛЬ ДАННЫХ ---
 show_config() {
-    if ! docker ps | grep -q "mtproto-proxy"; then echo -e "${RED}Прокси не найден!${NC}"; return; fi
-    SECRET=$(docker inspect mtproto-proxy --format='{{range .Config.Cmd}}{{.}} {{end}}' | awk '{print $NF}')
-    IP=$(get_ip)
-    PORT=$(docker inspect mtproto-proxy --format='{{range $p, $conf := .HostConfig.PortBindings}}{{(index $conf 0).HostPort}}{{end}}' 2>/dev/null)
-    PORT=${PORT:-443}
-    LINK="tg://proxy?server=$IP&port=$PORT&secret=$SECRET"
+    clear
+    echo -e "\n${GREEN}=== СПИСОК ВСЕХ ПРОКСИ ===${NC}"
 
-    echo -e "\n${GREEN}=== ПАНЕЛЬ ДАННЫХ (RU) ===${NC}"
-    echo -e "IP: $IP | Port: $PORT"
-    echo -e "Secret: $SECRET"
-    echo -e "Link: ${BLUE}$LINK${NC}"
-    qrencode -t ANSIUTF8 "$LINK"
+    CONTAINERS=$(docker ps --format "{{.Names}}" | grep "mtproto-proxy")
+
+    if [ -z "$CONTAINERS" ]; then
+        echo -e "${RED}Прокси не найдены!${NC}"
+        return
+    fi
+
+    IP=$(get_ip)
+
+    for CONTAINER in $CONTAINERS; do
+        PORT=$(docker inspect "$CONTAINER" --format='{{range $p, $conf := .HostConfig.PortBindings}}{{(index $conf 0).HostPort}}{{end}}')
+        SECRET=$(docker inspect "$CONTAINER" --format='{{range .Config.Cmd}}{{.}} {{end}}' | awk '{print $NF}')
+
+        LINK="tg://proxy?server=$IP&port=$PORT&secret=$SECRET"
+
+        echo ""
+        echo -e "${CYAN}Контейнер:${NC} $CONTAINER"
+        echo -e "IP: $IP | Port: $PORT"
+        echo -e "Secret: $SECRET"
+        echo -e "Link: ${BLUE}$LINK${NC}"
+        qrencode -t ANSIUTF8 "$LINK"
+        echo "----------------------------------------"
+    done
 }
 
 # --- УСТАНОВКА ---
 menu_install() {
     clear
+    echo -e "${CYAN}--- СОЗДАНИЕ НОВОГО ПРОКСИ ---${NC}"
+
+    read -p "Введите ID клиента: " CLIENT_ID
+
     echo -e "${CYAN}--- Выберите домен для маскировки (Fake TLS) ---${NC}"
+
     domains=(
         "google.com" "wikipedia.org" "habr.com" "github.com"
         "coursera.org" "udemy.com" "medium.com" "stackoverflow.com"
         "bbc.com" "cnn.com" "reuters.com" "nytimes.com"
         "lenta.ru" "rbc.ru" "ria.ru" "kommersant.ru"
-        "stepik.org" "duolingo.com" "khanacademy.org" "ted.com"
     )
 
     for i in "${!domains[@]}"; do
@@ -95,31 +113,43 @@ menu_install() {
         [[ $(( (i+1) % 2 )) -eq 0 ]] && echo ""
     done
 
-    read -p "Ваш выбор [1-20]: " d_idx
+    echo ""
+    read -p "Ваш выбор: " d_idx
     DOMAIN=${domains[$((d_idx-1))]}
     DOMAIN=${DOMAIN:-google.com}
 
-    echo -e "\n${CYAN}--- Выберите порт ---${NC}"
-    echo -e "1) 443 (Рекомендуется)"
-    echo -e "2) 8443"
-    echo -e "3) Свой порт"
-    read -p "Выбор: " p_choice
-    case $p_choice in
-        2) PORT=8443 ;;
-        3) read -p "Введите свой порт: " PORT ;;
-        *) PORT=443 ;;
-    esac
+    read -p "Введите порт клиента: " PORT
 
-    echo -e "${YELLOW}[*] Настройка прокси...${NC}"
+    CONTAINER_NAME="mtproto-proxy-$CLIENT_ID"
+
+    if docker ps -a --format "{{.Names}}" | grep -q "^$CONTAINER_NAME$"; then
+        echo -e "${RED}Такой клиент уже существует!${NC}"
+        read -p "Нажмите Enter..."
+        return
+    fi
+
+    echo -e "${YELLOW}[*] Создание прокси...${NC}"
+
     SECRET=$(docker run --rm nineseconds/mtg:2 generate-secret --hex "$DOMAIN")
-    docker stop mtproto-proxy &>/dev/null && docker rm mtproto-proxy &>/dev/null
 
-    docker run -d --name mtproto-proxy --restart always -p "$PORT":"$PORT" \
-        nineseconds/mtg:2 simple-run -n 1.1.1.1 -i prefer-ipv4 0.0.0.0:"$PORT" "$SECRET" > /dev/null
+    docker run -d \
+        --name "$CONTAINER_NAME" \
+        --restart always \
+        -p "$PORT:$PORT" \
+        nineseconds/mtg:2 \
+        simple-run -n 1.1.1.1 -i prefer-ipv4 0.0.0.0:"$PORT" "$SECRET" > /dev/null
+
+    IP=$(get_ip)
+    LINK="tg://proxy?server=$IP&port=$PORT&secret=$SECRET"
 
     clear
-    show_config
-    read -p "Установка завершена. Нажмите Enter..."
+    echo -e "${GREEN}Прокси успешно создан${NC}"
+    echo -e "Клиент: $CLIENT_ID"
+    echo -e "Port: $PORT"
+    echo -e "Link: ${BLUE}$LINK${NC}"
+    qrencode -t ANSIUTF8 "$LINK"
+
+    read -p "Нажмите Enter..."
 }
 
 # --- ВЫХОД ---
@@ -191,7 +221,7 @@ while true; do
         1) menu_install ;;
         2) clear; show_config; read -p "Нажмите Enter..." ;;
         3) show_promo ;;
-        4) docker stop mtproto-proxy >/dev/null 2>&1; docker rm mtproto-proxy >/dev/null 2>&1; echo "Прокси удалён" ;;
+        4) read -p "Введите ID клиента для удаления: " CLIENT_ID docker stop "mtproto-proxy-$CLIENT_ID" >/dev/null 2>&1 docker rm "mtproto-proxy-$CLIENT_ID" >/dev/null 2>&1 echo "Прокси клиента удалён" read -p "Нажмите Enter..." ;;
         5) full_uninstall ;;
         0) show_exit ;;
         *) echo "Неверный ввод" ;;
