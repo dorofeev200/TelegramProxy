@@ -173,6 +173,62 @@ full_uninstall() {
     exit 0
 }
 
+# --- 6) ПЕРЕЗАПУСК ПРОКСИ ---
+restart_proxy() {
+    clear
+    echo -e "${CYAN}--- Перезапуск прокси ---${NC}"
+
+    if ! docker ps -a | grep -q "mtproto-proxy"; then
+        echo -e "${RED}Прокси контейнер не найден!${NC}"
+        read -p "Нажмите Enter..."
+        return
+    fi
+
+    docker restart mtproto-proxy >/dev/null 2>&1
+
+    echo -e "${GREEN}[OK] Прокси успешно перезапущен.${NC}"
+    read -p "Нажмите Enter..."
+}
+
+# --- 7) ONLINE ПОЛЬЗОВАТЕЛИ ---
+show_online_users() {
+    clear
+    echo -e "${CYAN}--- ONLINE пользователи ---${NC}"
+
+    PORT=$(docker inspect mtproto-proxy \
+        --format='{{range $p, $conf := .HostConfig.PortBindings}}{{(index $conf 0).HostPort}}{{end}}' 2>/dev/null)
+
+    PORT=${PORT:-443}
+
+    ss -tn sport = :$PORT | tail -n +2
+
+    echo ""
+    read -p "Нажмите Enter..."
+}
+
+# --- 8) МОНИТОРИНГ ТРАФИКА ---
+proxy_monitoring() {
+    clear
+    echo -e "${CYAN}--- Мониторинг нагрузки прокси ---${NC}"
+
+    docker stats mtproto-proxy --no-stream
+
+    echo ""
+    read -p "Нажмите Enter..."
+}
+
+# --- 9) ОБНОВЛЕНИЕ DOCKER IMAGE ---
+update_proxy_image() {
+    clear
+    echo -e "${CYAN}--- Обновление MTProto Proxy ---${NC}"
+
+    docker pull nineseconds/mtg:2
+
+    echo ""
+    echo -e "${GREEN}[OK] Docker image обновлён.${NC}"
+    read -p "Нажмите Enter..."
+}
+
 # --- СТАРТ СКРИПТА ---
 check_root
 install_deps
@@ -185,6 +241,10 @@ while true; do
     echo -e "3) ${YELLOW}Показать PROMO снова${NC}"
     echo -e "4) ${RED}Удалить только прокси${NC}"
     echo -e "5) ${RED}Удалить скрипт полностью${NC}"
+    echo -e "6) ${CYAN}Перезапустить прокси${NC}"
+    echo -e "7) ${CYAN}ONLINE пользователи${NC}"
+    echo -e "8) ${CYAN}Мониторинг нагрузки${NC}"
+    echo -e "9) ${CYAN}Обновить Docker image${NC}"
     echo -e "0) Выход${NC}"
     read -p "Пункт: " m_idx
     case $m_idx in
@@ -193,6 +253,10 @@ while true; do
         3) show_promo ;;
         4) docker stop mtproto-proxy >/dev/null 2>&1; docker rm mtproto-proxy >/dev/null 2>&1; echo "Прокси удалён" ;;
         5) full_uninstall ;;
+        6) restart_proxy ;;
+        7) show_online_users ;;
+        8) proxy_monitoring ;;
+        9) update_proxy_image ;;
         0) show_exit ;;
         *) echo "Неверный ввод" ;;
     esac
