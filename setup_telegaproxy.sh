@@ -18,7 +18,10 @@ NC='\033[0m'
 
 # --- СИСТЕМНЫЕ ПРОВЕРКИ ---
 check_root() {
-    if [ "$EUID" -ne 0 ]; then echo -e "${RED}Ошибка: запустите через sudo!${NC}"; exit 1; fi
+    if [ "$EUID" -ne 0 ]; then
+        echo -e "${RED}Ошибка: запустите через sudo!${NC}"
+        exit 1
+    fi
 }
 
 install_deps() {
@@ -26,9 +29,11 @@ install_deps() {
         curl -fsSL https://get.docker.com | sh
         systemctl enable --now docker
     fi
+
     if ! command -v qrencode &> /dev/null; then
         apt-get update && apt-get install -y qrencode || yum install -y qrencode
     fi
+
     cp "$0" "$BINARY_PATH" && chmod +x "$BINARY_PATH"
 }
 
@@ -38,68 +43,60 @@ get_ip() {
     echo "$ip" | grep -E -o '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n 1
 }
 
-# --- 1) ПРОМО ПРИ ЗАПУСКЕ ---
+# --- ПРОМО ---
 show_promo() {
     clear
     echo ""
     echo -e "${MAGENTA}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${MAGENTA}║                 COMP_MANIYA Telega Proxy                     ║${NC}"
+    echo -e "${MAGENTA}║                 COMP_MANIYA Telega Proxy                   ║${NC}"
     echo -e "${MAGENTA}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
 
-    echo -e "${CYAN}Telegram:${NC} https://t.me/computerchik"
+    echo -e "${CYAN}Telegram:${NC} $PROMO_LINK"
     echo -e "${RED}YouTube:${NC} https://www.youtube.com/@comp_maniya"
 
     echo ""
     echo -e "${YELLOW}QR Telegram:${NC}"
-    qrencode -t ANSIUTF8 "https://t.me/computerchik"
+    qrencode -t ANSIUTF8 "$PROMO_LINK"
 
     echo ""
-    echo -e "${YELLOW}QR YouTube:${NC}"
-    qrencode -t ANSIUTF8 "https://www.youtube.com/@comp_maniya"
-
-    echo ""
-    read -p "Нажмите enter для настройки каскадного скрипта..."
+    read -p "Нажмите Enter для продолжения..."
 }
 
-# --- ПАНЕЛЬ ДАННЫХ ---
+# --- СПИСОК ВСЕХ ПРОКСИ ---
 show_config() {
     clear
     echo -e "\n${GREEN}=== СПИСОК ВСЕХ ПРОКСИ ===${NC}"
 
-    CONTAINERS=$(docker ps --format "{{.Names}}" | grep "mtproto-proxy")
+    mapfile -t containers < <(docker ps -a --format "{{.Names}}" | grep "^mtproto-proxy-")
 
-    if [ -z "$CONTAINERS" ]; then
+    if [ ${#containers[@]} -eq 0 ]; then
         echo -e "${RED}Прокси не найдены!${NC}"
         return
     fi
 
     IP=$(get_ip)
 
-    for CONTAINER in $CONTAINERS; do
+    for CONTAINER in "${containers[@]}"; do
         PORT=$(docker inspect "$CONTAINER" --format='{{range $p, $conf := .HostConfig.PortBindings}}{{(index $conf 0).HostPort}}{{end}}')
         SECRET=$(docker inspect "$CONTAINER" --format='{{range .Config.Cmd}}{{.}} {{end}}' | awk '{print $NF}')
-
         LINK="tg://proxy?server=$IP&port=$PORT&secret=$SECRET"
 
         echo ""
-        echo -e "${CYAN}Контейнер:${NC} $CONTAINER"
+        echo -e "${CYAN}Прокси:${NC} $CONTAINER"
         echo -e "IP: $IP | Port: $PORT"
-        echo -e "Secret: $SECRET"
         echo -e "Link: ${BLUE}$LINK${NC}"
         qrencode -t ANSIUTF8 "$LINK"
-        echo "----------------------------------------"
+        echo "--------------------------------------"
     done
 }
 
-# --- УСТАНОВКА ---
+# --- СОЗДАНИЕ НОВОГО ПРОКСИ ---
 menu_install() {
     clear
     echo -e "${CYAN}--- СОЗДАНИЕ НОВОГО ПРОКСИ ---${NC}"
 
     read -p "Введите ID клиента: " CLIENT_ID
-
-    echo -e "${CYAN}--- Выберите домен для маскировки (Fake TLS) ---${NC}"
 
     domains=(
         "google.com" "wikipedia.org" "habr.com" "github.com"
@@ -108,6 +105,7 @@ menu_install() {
         "lenta.ru" "rbc.ru" "ria.ru" "kommersant.ru"
     )
 
+    echo ""
     for i in "${!domains[@]}"; do
         printf "${YELLOW}%2d)${NC} %-20s " "$((i+1))" "${domains[$i]}"
         [[ $(( (i+1) % 2 )) -eq 0 ]] && echo ""
@@ -118,7 +116,7 @@ menu_install() {
     DOMAIN=${domains[$((d_idx-1))]}
     DOMAIN=${DOMAIN:-google.com}
 
-    read -p "Введите порт клиента: " PORT
+    read -p "Введите порт: " PORT
 
     CONTAINER_NAME="mtproto-proxy-$CLIENT_ID"
 
@@ -145,10 +143,45 @@ menu_install() {
     clear
     echo -e "${GREEN}Прокси успешно создан${NC}"
     echo -e "Клиент: $CLIENT_ID"
-    echo -e "Port: $PORT"
     echo -e "Link: ${BLUE}$LINK${NC}"
     qrencode -t ANSIUTF8 "$LINK"
 
+    read -p "Нажмите Enter..."
+}
+
+# --- УДАЛЕНИЕ ПРОКСИ ---
+delete_proxy() {
+    clear
+    echo -e "${RED}--- УДАЛЕНИЕ ПРОКСИ ---${NC}"
+
+    mapfile -t containers < <(docker ps -a --format "{{.Names}}" | grep "^mtproto-proxy-")
+
+    if [ ${#containers[@]} -eq 0 ]; then
+        echo -e "${RED}Прокси не найдены!${NC}"
+        read -p "Нажмите Enter..."
+        return
+    fi
+
+    echo ""
+    for i in "${!containers[@]}"; do
+        echo -e "${YELLOW}$((i+1)))${NC} ${containers[$i]}"
+    done
+
+    echo ""
+    read -p "Выберите номер для удаления: " DEL_NUM
+
+    INDEX=$((DEL_NUM-1))
+
+    if [ -z "${containers[$INDEX]}" ]; then
+        echo -e "${RED}Неверный выбор!${NC}"
+        read -p "Нажмите Enter..."
+        return
+    fi
+
+    docker stop "${containers[$INDEX]}" >/dev/null 2>&1
+    docker rm "${containers[$INDEX]}" >/dev/null 2>&1
+
+    echo -e "${GREEN}Прокси удалён: ${containers[$INDEX]}${NC}"
     read -p "Нажмите Enter..."
 }
 
@@ -156,73 +189,32 @@ menu_install() {
 show_exit() {
     clear
     show_config
-    echo -e "\n${MAGENTA}💰 ПОДДЕРЖКА АВТОРА (CloudTips)${NC}"
+    echo -e "\n${MAGENTA}💰 ПОДДЕРЖКА АВТОРА${NC}"
     qrencode -t ANSIUTF8 "$TIP_LINK"
     echo -e "Донат: $TIP_LINK"
-    echo -e "https://www.youtube.com/@comp_maniya"
     exit 0
 }
 
-# --- ПОЛНОЕ УДАЛЕНИЕ СКРИПТА ---
-full_uninstall() {
-    clear
-    echo -e "${RED}╔══════════════════════════════════════╗${NC}"
-    echo -e "${RED}║     ПОЛНОЕ УДАЛЕНИЕ TELEGAPROXY      ║${NC}"
-    echo -e "${RED}╚══════════════════════════════════════╝${NC}"
-    echo ""
-
-    echo "Будет удалено:"
-    echo "- Docker контейнер mtproto-proxy"
-    echo "- команда $ALIAS_NAME"
-    echo "- launcher $BINARY_PATH"
-    echo ""
-
-    read -p "Удалить полностью? (y/n): " confirm
-    confirm=$(echo "$confirm" | tr '[:upper:]' '[:lower:]')
-
-    if [[ "$confirm" != "y" ]]; then
-        echo -e "${YELLOW}Удаление отменено.${NC}"
-        read -p "Нажмите Enter..."
-        return
-    fi
-
-    echo -e "${YELLOW}[*] Остановка контейнера...${NC}"
-    docker stop mtproto-proxy >/dev/null 2>&1
-    docker rm mtproto-proxy >/dev/null 2>&1
-
-    echo -e "${YELLOW}[*] Удаление Docker image...${NC}"
-    docker rmi nineseconds/mtg:2 >/dev/null 2>&1
-
-    echo -e "${YELLOW}[*] Удаление launcher...${NC}"
-    rm -f "$BINARY_PATH"
-
-    echo ""
-    echo -e "${GREEN}[SUCCESS] Скрипт полностью удалён.${NC}"
-    echo -e "${GREEN}[SUCCESS] Перезапустите терминал.${NC}"
-
-    exit 0
-}
-
-# --- СТАРТ СКРИПТА ---
+# --- СТАРТ ---
 check_root
 install_deps
-show_promo # Промо теперь только один раз при старте
+show_promo
 
 while true; do
     echo -e "\n${MAGENTA}=== telegaproxy Manager (by comp-maniya) ===${NC}"
-    echo -e "1) ${GREEN}Установить / Обновить прокси${NC}"
-    echo -e "2) Показать данные подключения${NC}"
-    echo -e "3) ${YELLOW}Показать PROMO снова${NC}"
-    echo -e "4) ${RED}Удалить только прокси${NC}"
-    echo -e "5) ${RED}Удалить скрипт полностью${NC}"
+    echo -e "1) ${GREEN}Создать новый прокси${NC}"
+    echo -e "2) Показать все прокси${NC}"
+    echo -e "3) ${YELLOW}Показать PROMO${NC}"
+    echo -e "4) ${RED}Удалить прокси${NC}"
     echo -e "0) Выход${NC}"
+
     read -p "Пункт: " m_idx
+
     case $m_idx in
         1) menu_install ;;
-        2) clear; show_config; read -p "Нажмите Enter..." ;;
+        2) show_config; read -p "Нажмите Enter..." ;;
         3) show_promo ;;
-        4) read -p "Введите ID клиента для удаления: " CLIENT_ID docker stop "mtproto-proxy-$CLIENT_ID" >/dev/null 2>&1 docker rm "mtproto-proxy-$CLIENT_ID" >/dev/null 2>&1 echo "Прокси клиента удалён" read -p "Нажмите Enter..." ;;
-        5) full_uninstall ;;
+        4) delete_proxy ;;
         0) show_exit ;;
         *) echo "Неверный ввод" ;;
     esac
