@@ -52,15 +52,19 @@ show_promo() {
     echo -e "${MAGENTA}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
 
-    echo -e "${CYAN}Telegram:${NC} $PROMO_LINK"
+    echo -e "${CYAN}Telegram:${NC} https://t.me/computerchik"
     echo -e "${RED}YouTube:${NC} https://www.youtube.com/@comp_maniya"
 
     echo ""
     echo -e "${YELLOW}QR Telegram:${NC}"
-    qrencode -t ANSIUTF8 "$PROMO_LINK"
+    qrencode -t ANSIUTF8 "https://t.me/computerchik"
 
     echo ""
-    read -p "Нажмите Enter для продолжения..."
+    echo -e "${YELLOW}QR YouTube:${NC}"
+    qrencode -t ANSIUTF8 "https://www.youtube.com/@comp_maniya"
+
+    echo ""
+    read -p "Нажмите enter для настройки каскадного скрипта..."
 }
 
 # --- СПИСОК ВСЕХ ПРОКСИ ---
@@ -68,7 +72,7 @@ show_config() {
     clear
     echo -e "\n${GREEN}=== СПИСОК ВСЕХ ПРОКСИ ===${NC}"
 
-    mapfile -t containers < <(docker ps -a --format "{{.Names}}" | grep "^mtproto-proxy-")
+    mapfile -t containers < <(docker ps -a --format "{{.Names}}" | grep "^mtproto-proxy")
 
     if [ ${#containers[@]} -eq 0 ]; then
         echo -e "${RED}Прокси не найдены!${NC}"
@@ -78,45 +82,58 @@ show_config() {
     IP=$(get_ip)
 
     for CONTAINER in "${containers[@]}"; do
-        PORT=$(docker inspect "$CONTAINER" --format='{{range $p, $conf := .HostConfig.PortBindings}}{{(index $conf 0).HostPort}}{{end}}')
+        PORT=$(docker inspect "$CONTAINER" --format='{{range $p, $conf := .HostConfig.PortBindings}}{{(index $conf 0).HostPort}}{{end}}' 2>/dev/null)
         SECRET=$(docker inspect "$CONTAINER" --format='{{range .Config.Cmd}}{{.}} {{end}}' | awk '{print $NF}')
+
         LINK="tg://proxy?server=$IP&port=$PORT&secret=$SECRET"
 
         echo ""
-        echo -e "${CYAN}Прокси:${NC} $CONTAINER"
+        echo -e "${CYAN}Контейнер:${NC} $CONTAINER"
         echo -e "IP: $IP | Port: $PORT"
+        echo -e "Secret: $SECRET"
         echo -e "Link: ${BLUE}$LINK${NC}"
         qrencode -t ANSIUTF8 "$LINK"
-        echo "--------------------------------------"
+        echo "----------------------------------------"
     done
 }
 
 # --- СОЗДАНИЕ НОВОГО ПРОКСИ ---
 menu_install() {
     clear
-    echo -e "${CYAN}--- СОЗДАНИЕ НОВОГО ПРОКСИ ---${NC}"
-
-    read -p "Введите ID клиента: " CLIENT_ID
+    echo -e "${CYAN}--- Выберите домен для маскировки (Fake TLS) ---${NC}"
 
     domains=(
         "google.com" "wikipedia.org" "habr.com" "github.com"
         "coursera.org" "udemy.com" "medium.com" "stackoverflow.com"
         "bbc.com" "cnn.com" "reuters.com" "nytimes.com"
         "lenta.ru" "rbc.ru" "ria.ru" "kommersant.ru"
+        "stepik.org" "duolingo.com" "khanacademy.org" "ted.com"
     )
 
-    echo ""
     for i in "${!domains[@]}"; do
         printf "${YELLOW}%2d)${NC} %-20s " "$((i+1))" "${domains[$i]}"
         [[ $(( (i+1) % 2 )) -eq 0 ]] && echo ""
     done
 
     echo ""
-    read -p "Ваш выбор: " d_idx
+    read -p "Ваш выбор [1-20]: " d_idx
     DOMAIN=${domains[$((d_idx-1))]}
     DOMAIN=${DOMAIN:-google.com}
 
-    read -p "Введите порт: " PORT
+    echo -e "\n${CYAN}--- Введите ID клиента ---${NC}"
+    read -p "ID клиента: " CLIENT_ID
+
+    echo -e "\n${CYAN}--- Выберите порт ---${NC}"
+    echo -e "1) 443"
+    echo -e "2) 8443"
+    echo -e "3) Свой порт"
+    read -p "Выбор: " p_choice
+
+    case $p_choice in
+        2) PORT=8443 ;;
+        3) read -p "Введите свой порт: " PORT ;;
+        *) PORT=443 ;;
+    esac
 
     CONTAINER_NAME="mtproto-proxy-$CLIENT_ID"
 
@@ -126,7 +143,7 @@ menu_install() {
         return
     fi
 
-    echo -e "${YELLOW}[*] Создание прокси...${NC}"
+    echo -e "${YELLOW}[*] Настройка прокси...${NC}"
 
     SECRET=$(docker run --rm nineseconds/mtg:2 generate-secret --hex "$DOMAIN")
 
@@ -137,24 +154,22 @@ menu_install() {
         nineseconds/mtg:2 \
         simple-run -n 1.1.1.1 -i prefer-ipv4 0.0.0.0:"$PORT" "$SECRET" > /dev/null
 
-    IP=$(get_ip)
-    LINK="tg://proxy?server=$IP&port=$PORT&secret=$SECRET"
-
     clear
     echo -e "${GREEN}Прокси успешно создан${NC}"
-    echo -e "Клиент: $CLIENT_ID"
+    IP=$(get_ip)
+    LINK="tg://proxy?server=$IP&port=$PORT&secret=$SECRET"
     echo -e "Link: ${BLUE}$LINK${NC}"
     qrencode -t ANSIUTF8 "$LINK"
 
-    read -p "Нажмите Enter..."
+    read -p "Установка завершена. Нажмите Enter..."
 }
 
-# --- УДАЛЕНИЕ ПРОКСИ ---
+# --- УДАЛЕНИЕ ПО НОМЕРУ ---
 delete_proxy() {
     clear
     echo -e "${RED}--- УДАЛЕНИЕ ПРОКСИ ---${NC}"
 
-    mapfile -t containers < <(docker ps -a --format "{{.Names}}" | grep "^mtproto-proxy-")
+    mapfile -t containers < <(docker ps -a --format "{{.Names}}" | grep "^mtproto-proxy")
 
     if [ ${#containers[@]} -eq 0 ]; then
         echo -e "${RED}Прокси не найдены!${NC}"
@@ -185,13 +200,18 @@ delete_proxy() {
     read -p "Нажмите Enter..."
 }
 
-# --- ВЫХОД ---
-show_exit() {
+# --- ПОЛНОЕ УДАЛЕНИЕ ---
+full_uninstall() {
     clear
-    show_config
-    echo -e "\n${MAGENTA}💰 ПОДДЕРЖКА АВТОРА${NC}"
-    qrencode -t ANSIUTF8 "$TIP_LINK"
-    echo -e "Донат: $TIP_LINK"
+    echo -e "${RED}╔══════════════════════════════════════╗${NC}"
+    echo -e "${RED}║     ПОЛНОЕ УДАЛЕНИЕ TELEGAPROXY      ║${NC}"
+    echo -e "${RED}╚══════════════════════════════════════╝${NC}"
+
+    docker stop $(docker ps -aq --filter "name=mtproto-proxy") >/dev/null 2>&1
+    docker rm $(docker ps -aq --filter "name=mtproto-proxy") >/dev/null 2>&1
+    rm -f "$BINARY_PATH"
+
+    echo -e "${GREEN}[SUCCESS] Скрипт полностью удалён.${NC}"
     exit 0
 }
 
@@ -202,10 +222,11 @@ show_promo
 
 while true; do
     echo -e "\n${MAGENTA}=== telegaproxy Manager (by comp-maniya) ===${NC}"
-    echo -e "1) ${GREEN}Создать новый прокси${NC}"
-    echo -e "2) Показать все прокси${NC}"
-    echo -e "3) ${YELLOW}Показать PROMO${NC}"
-    echo -e "4) ${RED}Удалить прокси${NC}"
+    echo -e "1) ${GREEN}Добавить новый прокси${NC}"
+    echo -e "2) Показать список прокси${NC}"
+    echo -e "3) ${YELLOW}Показать PROMO снова${NC}"
+    echo -e "4) ${RED}Удалить прокси по номеру${NC}"
+    echo -e "5) ${RED}Удалить скрипт полностью${NC}"
     echo -e "0) Выход${NC}"
 
     read -p "Пункт: " m_idx
@@ -215,7 +236,8 @@ while true; do
         2) show_config; read -p "Нажмите Enter..." ;;
         3) show_promo ;;
         4) delete_proxy ;;
-        0) show_exit ;;
+        5) full_uninstall ;;
+        0) exit 0 ;;
         *) echo "Неверный ввод" ;;
     esac
 done
