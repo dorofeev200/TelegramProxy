@@ -193,16 +193,31 @@ restart_proxy() {
 # --- 7) ONLINE ПОЛЬЗОВАТЕЛИ ---
 show_online_users() {
     clear
-    echo -e "${CYAN}--- ONLINE пользователи ---${NC}"
+    echo -e "${CYAN}╔══════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║        ONLINE ПОЛЬЗОВАТЕЛИ           ║${NC}"
+    echo -e "${CYAN}╚══════════════════════════════════════╝${NC}"
+    echo ""
+
+    if ! docker ps | grep -q "mtproto-proxy"; then
+        echo -e "${RED}Прокси не запущен.${NC}"
+        read -p "Нажмите Enter..."
+        return
+    fi
 
     PORT=$(docker inspect mtproto-proxy \
         --format='{{range $p, $conf := .HostConfig.PortBindings}}{{(index $conf 0).HostPort}}{{end}}' 2>/dev/null)
 
     PORT=${PORT:-443}
 
-    ss -tn sport = :$PORT | tail -n +2
+    echo -e "${YELLOW}Порт:${NC} $PORT"
+    echo ""
+
+    ss -tn state established "( dport = :$PORT or sport = :$PORT )"
 
     echo ""
+    echo -e "${GREEN}Всего подключений:${NC} $(ss -tn state established "( dport = :$PORT or sport = :$PORT )" | tail -n +2 | wc -l)"
+    echo ""
+
     read -p "Нажмите Enter..."
 }
 
