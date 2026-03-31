@@ -43,7 +43,7 @@ show_promo() {
     clear
     echo ""
     echo -e "${MAGENTA}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${MAGENTA}║                 COMP_MANIYA KASKAD PRO                     ║${NC}"
+    echo -e "${MAGENTA}║                 COMP_MANIYA Telega Proxy                     ║${NC}"
     echo -e "${MAGENTA}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
 
