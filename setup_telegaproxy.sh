@@ -244,6 +244,44 @@ update_proxy_image() {
     read -p "Нажмите Enter..."
 }
 
+# --- ТОП КЛИЕНТОВ ПО ТРАФИКУ ---
+top_clients() {
+    clear
+    echo -e "${CYAN}╔══════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║        ТОП КЛИЕНТОВ ПО IP            ║${NC}"
+    echo -e "${CYAN}╚══════════════════════════════════════╝${NC}"
+    echo ""
+
+    PORT=$(docker inspect mtproto-proxy \
+        --format='{{range $p, $conf := .HostConfig.PortBindings}}{{(index $conf 0).HostPort}}{{end}}' 2>/dev/null)
+
+    PORT=${PORT:-443}
+
+    ss -tn state established "( dport = :$PORT or sport = :$PORT )" \
+        | awk 'NR>1 {print $5}' \
+        | cut -d: -f1 \
+        | sort \
+        | uniq -c \
+        | sort -nr
+
+    echo ""
+    read -p "Нажмите Enter..."
+}
+
+# --- БЛОКИРОВКА IP ---
+block_client_ip() {
+    clear
+    echo -e "${CYAN}--- Блокировка IP клиента ---${NC}"
+
+    read -p "Введите IP для блокировки: " CLIENT_IP
+
+    iptables -I INPUT -s "$CLIENT_IP" -j DROP
+
+    echo -e "${GREEN}[OK] IP ${CLIENT_IP} заблокирован.${NC}"
+
+    read -p "Нажмите Enter..."
+}
+
 # --- СТАРТ СКРИПТА ---
 check_root
 install_deps
@@ -260,6 +298,8 @@ while true; do
     echo -e "7) ${CYAN}ONLINE пользователи${NC}"
     echo -e "8) ${CYAN}Мониторинг нагрузки${NC}"
     echo -e "9) ${CYAN}Обновить Docker image${NC}"
+    echo -e "10) Топ клиентов по IP"
+    echo -e "11) Заблокировать IP"
     echo -e "0) Выход${NC}"
     read -p "Пункт: " m_idx
     case $m_idx in
@@ -272,6 +312,8 @@ while true; do
         7) show_online_users ;;
         8) proxy_monitoring ;;
         9) update_proxy_image ;;
+        10) top_clients ;;
+        11) block_client_ip ;;
         0) show_exit ;;
         *) echo "Неверный ввод" ;;
     esac
